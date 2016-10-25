@@ -1,0 +1,134 @@
+// Assumptions: 400 to >800 nm range, 1 nm step, filename: "*fot<time>m.csv" (ex: MB-fot30m.csv), no other .CSV files present in the folder, 1st line of each .CSV is header, one of the files corresponds to time = 0.
+
+
+//dlgPath;
+%B = "";
+GetString Path;
+string path$ = %B;
+
+findFiles ext:="*.csv";
+
+win -r %H Total;
+wks.ncols = 4;
+range TotalA = [TOTAL]Sheet1!Col(A);
+range TotalB = [TOTAL]Sheet1!Col(B);
+range TotalC = [TOTAL]Sheet1!Col(C);
+range TotalD = [TOTAL]Sheet1!Col(D);
+
+C0 = 0;
+D0 = 0;
+E0 = 0;
+Int0 = 0;
+
+findFiles ext:="*.csv";
+for(int iFile = 1; iFile <= fname.GetNumTokens(CRLF); iFile++)
+{ 
+	string filename$ = fname.GetToken(iFile, CRLF)$;
+    string refbookname$ = "ref";
+	nn = filename.ReverseFind("fot");
+	oo = filename.ReverseFind(".");
+	string time$ = filename.Mid(nn + 3, oo - nn - 3)$; // File name dependent
+	string bookname$ = "t" + time$;
+	string graphname$ = "t" + time$ + "g";
+	newbook temp;
+	impASC filename$ Options.Hdr.SubHdrLns:=1;
+	win -r %H %(bookname$);
+	wks.name$ = Sheet1;
+    //delete wcol(1);
+    //wks.col1.type=4;
+    
+    double avg1=0;
+    double avg2=0;
+    
+    for(int i = 1; i <= 80; i++)
+    {
+        avg1 = avg1 + col(B)[i];
+        avg2 = avg2 + col(B)[1024-i];
+    }
+    avg1 = avg1 / 80;
+    avg2 = avg2 / 80;
+    
+    //type $(avg1);
+    
+    //smooth iy:=col(B) method:=sg polyorder:=2 npts:=80 oy:=col(B);
+    subtract_line iy:=col(B) x1:=Col(A)[1] y1:=avg1 x2:=Col(A)[1023] y2:=avg2 oy:=col(B);
+	range b = [bookname$]Sheet1!Col(B);
+    
+    nlbegin (1,2) Gauss tt replica:=1;
+    tt.xc=3473;
+    tt.xc__2=3476;
+    //tt.w=1.75;
+    //tt.w__2=1.75;
+    tt.y0=0;
+    tt.A=0.01;
+    tt.A__2=-0.01;
+    nlfit;
+    nlend 1;
+    
+    string tiempo$ = Left(time$, Len(time$)-1)$;
+    int itiempo = %(tiempo$);
+	TotalA[iFile] = itiempo;
+    
+    double suma_alturas=tt.A+tt.A__2;
+    //nlf_gauss(tt.xc,tt.y0,tt.xc,tt.w,tt.A)+nlf_gauss(tt.xc,tt.y0,tt.xc__2,tt.w__2,tt.A__2)-nlf_gauss(tt.xc__2,tt.y0,tt.xc,tt.w,tt.A)-nlf_gauss(tt.xc__2,tt.y0,tt.xc__2,tt.w__2,tt.A__2);
+    
+    if (suma_alturas > 5 || suma_alturas < 0)
+    {
+        suma_alturas = 0; 
+    }
+    
+	TotalB[iFile] = suma_alturas; // Range dependent [Average 621,622,623nm]
+	
+	range integration_rng = [bookname$]FitNLCurve1!Col(A4)[1:1023]; // Range dependent [530nm:800nm]
+    integ1 iy:=integration_rng type:=math baseline:=0 plot:=0;
+    
+    //subtract_line iy:=col(C) x1:=Col(A)[1] y1:=Col(C)[1] x2:=Col(A)[1023] y2:=Col(C)[1023] oy:=col(C);
+    
+    //range c = [bookname$]Sheet1!Col(C);
+	range integration_rng = [bookname$]FitNLCurve1!Col(B)[1:1023];
+    integ1 iy:=integration_rng type:=math baseline:=1 plot:=0;
+    
+	TotalC[iFile] = -1*integ1.area;
+    TotalD[iFile] = 0; // Range dependent [Average 663,664,665nm]
+	if (tiempo$ == "0")
+	{
+		C0 = suma_alturas;
+        D0 = (b[264] + b[265] + b[266]) / 3; // Range dependent [Average 663,664,665nm]
+		Int0 = -1*integ1.area;
+	}
+}
+
+window -a Total;
+col(E)=Col(B)/C0;
+col(F)=Col(C)/Int0;
+col(G)=Col(D)/D0;
+//plotxy iy:=([TOTAL]Sheet1!Col(A),[TOTAL]Sheet1!Col(E)) plot:=201 ogl:=<new template:=SCATTER>;
+//win -r %H Abs1Rel;
+
+//window -a Total;
+plotxy iy:=([TOTAL]Sheet1!Col(A),[TOTAL]Sheet1!Col(F)) plot:=201 ogl:=<new template:=SCATTER>;
+win -r %H IntRel;
+
+//window -a Total;
+//plotxy iy:=([TOTAL]Sheet1!Col(A),[TOTAL]Sheet1!Col(G)) plot:=201 ogl:=<new template:=SCATTER>;
+//win -r %H Abs2Rel;
+
+win -t Plot;	// Create an empty plot
+win -r %H Todos;
+doc -ef W {
+	string bn$ = %H;
+	if (bn$=="Total" || bn$=="ref") {continue;};
+	window -a %H;
+	plotxy iy:=([bn$]Sheet1!Col(A),[bn$]Sheet1!Col(B)) plot:=200 rescale:=1 ogl:=[Todos]1!;
+}
+layer -g; // Group the curves
+
+win -t Plot2;	// Create an empty plot
+win -r %H Todos2;
+doc -ef W {
+	string bn2$ = %H;
+	if (bn2$=="Total" || bn2$=="ref") {continue;};
+	window -a %H;
+	plotxy iy:=([bn2$]Sheet1!Col(A),[bn2$]Sheet1!Col(C)) plot:=200 rescale:=1 ogl:=[Todos2]1!;
+}
+layer -g; // Group the curves

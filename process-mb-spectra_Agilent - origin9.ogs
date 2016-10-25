@@ -1,0 +1,123 @@
+// Assumptions: 400 to >800 nm range, 1 nm step, filename: "*fot<time>m.csv" (ex: MB-fot30m.csv), no other .CSV files present in the folder, 1st line of each .CSV is header, one of the files corresponds to time = 0.
+
+
+//dlgPath;
+%B = "";
+GetString Path;
+string path$ = %B;
+
+findFiles ext:="*.csv";
+
+win -r %H Total;
+wks.ncols = 4;
+range TotalA = [TOTAL]Sheet1!Col(A);
+range TotalB = [TOTAL]Sheet1!Col(B);
+range TotalC = [TOTAL]Sheet1!Col(C);
+range TotalD = [TOTAL]Sheet1!Col(D);
+
+newbook name:="Fitting";
+wks.ncols = 4;
+range FittingA = [FITTING]Sheet1!Col(A);
+range FittingB = [FITTING]Sheet1!Col(B);
+range FittingC = [FITTING]Sheet1!Col(C);
+range FittingD = [FITTING]Sheet1!Col(D);
+
+C0 = 0;
+D0 = 0;
+E0 = 0;
+Int0 = 0;
+
+
+// Este espectro en formato "asc" se resta a todos los demás
+//findFiles ext:="*.asc";
+//for(int iFile = 1; iFile <= fname.GetNumTokens(CRLF); iFile++)
+//{
+//	string filename$ = fname.GetToken(iFile, CRLF)$;
+//	string refbookname$ = "ref";
+//	newbook ref;
+//	impCSV filename$ Options.HeaderLines.MainHdrLns:= 1;
+//	win -r %H %(refbookname$);
+//	wks.name$ = Sheet1;
+//	subtract_line iy:=col(B) x1:=Col(A)[44] y1:=Col(B)[44] x2:=Col(A)[401] y2:=Col(B)[401] oy:=col(B);
+//}
+// end resta
+
+findFiles ext:="*.csv";
+for(int iFile = 1; iFile <= fname.GetNumTokens(CRLF); iFile++)
+{
+	string filename$ = fname.GetToken(iFile, CRLF)$;
+    string refbookname$ = "ref";
+	nn = filename.ReverseFind("fot");
+	oo = filename.ReverseFind(".");
+	string time$ = filename.Mid(nn + 3, oo - nn - 3)$; // File name dependent
+	string bookname$ = "t" + time$;
+	string graphname$ = "t" + time$ + "g";
+	newbook temp;
+	impCSV filename$ Options.HeaderLines.MainHdrLns:= 1;
+	win -r %H %(bookname$);
+	wks.name$ = Sheet1;
+	range b = [bookname$]Sheet1!Col(B);
+	range integration_rng = [bookname$]Sheet1!Col(B)[44:401]; // Range dependent [530nm:800nm]
+	subtract_line iy:=col(B) x1:=Col(A)[44] y1:=Col(B)[44] x2:=Col(A)[401] y2:=Col(B)[401] oy:=col(B); //131 Range dependent [530nm:724nm]
+    //subtract_ref iy1:=Col(B) iy2:=[refbookname$]Sheet1!Col(B);  // Resta de .ASC
+    // Graficar cada espectro por separado
+    //plotxy iy:=(col(A),col(B)) plot:=200;
+	//win -r %H %(graphname$);
+    nlbegin (1,2[1:400]) Gauss tt replica:=1;
+    tt.xc=622;
+    tt.xc__2=666;
+    tt.w=65;
+    tt.w__2=30;
+    tt.y0=0;
+    tt.A=18;
+    tt.A__2=12;
+    nlfit;
+    nlend 1;
+    string tiempo$ = Left(time$, Len(time$)-1)$;
+    int itiempo = %(tiempo$);
+	TotalA[iFile] = itiempo;
+    FittingA[iFile] = itiempo;
+    FittingB[iFile] = tt.Height;
+    FittingC[iFile] = tt.Height__2;
+	TotalB[iFile] = (b[222] + b[223] + b[224]) / 3; // Range dependent [Average 621,622,623nm]
+	integ1 iy:=integration_rng type:=abs;
+	TotalC[iFile] = integ1.area;
+    TotalD[iFile] = (b[264] + b[265] + b[266]) / 3; // Range dependent [Average 663,664,665nm]
+	if (tiempo$ == "0")
+	{
+		C0 = (b[222] + b[223] + b[224]) / 3; // Range dependent [Average 621,622,623nm]
+        D0 = (b[264] + b[265] + b[266]) / 3; // Range dependent [Average 663,664,665nm]
+        E0 = tt.Height;
+		Int0 = integ1.area;
+	}
+}
+
+window -a Book1;
+col(D)=Col(B)/E0;
+plotxy iy:=([Book1]Sheet1!Col(A),[Book1]Sheet1!Col(D)) plot:=201 ogl:=<new template:=SCATTER>;
+win -r %H Height1FitRel;
+
+window -a Total;
+col(E)=Col(B)/C0;
+col(F)=Col(C)/Int0;
+col(G)=Col(D)/D0;
+plotxy iy:=([TOTAL]Sheet1!Col(A),[TOTAL]Sheet1!Col(E)) plot:=201 ogl:=<new template:=SCATTER>;
+win -r %H Abs1Rel;
+
+window -a Total;
+plotxy iy:=([TOTAL]Sheet1!Col(A),[TOTAL]Sheet1!Col(C)) plot:=201 ogl:=<new template:=SCATTER>;
+win -r %H IntRel;
+
+window -a Total;
+plotxy iy:=([TOTAL]Sheet1!Col(A),[TOTAL]Sheet1!Col(G)) plot:=201 ogl:=<new template:=SCATTER>;
+win -r %H Abs2Rel;
+
+win -t Plot;	// Create an empty plot
+win -r %H Todos;
+doc -ef W {
+	string bn$ = %H;
+	if (bn$=="Total" || bn$=="ref" || bn$=="Book1") {continue;};
+	window -a %H;
+	plotxy iy:=([bn$]Sheet1!Col(A),[bn$]Sheet1!Col(B)) plot:=200 rescale:=1 ogl:=[Todos]1!;
+}
+layer -g; // Group the curves

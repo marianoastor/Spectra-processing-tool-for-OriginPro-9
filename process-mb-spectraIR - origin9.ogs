@@ -1,0 +1,86 @@
+//dlgPath;
+%B = "";
+GetString Path; // Popup pidiendo el path donde están los espectros
+string path$ = %B;
+
+win -r %H Total; // Nuevo libro "Total"
+worksheet -c C;
+
+range TotalA = [TOTAL]Sheet1!Col(A);
+range TotalB = [TOTAL]Sheet1!Col(B);
+range TotalC = [TOTAL]Sheet1!Col(C);
+C0 = 0;
+Int0 = 0;
+
+// Espectro de la muestra sin ácido esteárico. Debe estar en formato CSV. Este espectro se resta a todos los demás.
+findFiles ext:="*.csv";
+for(int iFile = 1; iFile <= fname.GetNumTokens(CRLF); iFile++)
+{
+	string filename$ = fname.GetToken(iFile,	 CRLF)$;
+	string refbookname$ = "ref";
+	newbook ref;
+	impCSV filename$;
+	win -r %H %(refbookname$);
+	wks.name$ = Sheet1;
+	subtract_line iy:=col(B) x1:=Col(A)[501] y1:=Col(B)[501] x2:=Col(A)[601] y2:=Col(B)[601] oy:=col(B); // 1021->2980cm-1
+}
+
+//range refe = [refbookname$]Sheet1!Col(B);
+
+// Cargar espectros de fotólisis a distintos tiempos
+findFiles ext:="*.asc";
+for(int iFile = 1; iFile <= fname.GetNumTokens(CRLF); iFile++)
+{
+	string filename$ = fname.GetToken(iFile,	 CRLF)$;
+	nn = filename.ReverseFind("fot");
+	oo = filename.ReverseFind(".");
+	string time$ = filename.Mid(nn + 3, oo - nn - 3)$;
+	string bookname$ = "t" + time$;
+	string graphname$ = "t" + time$ + "g";
+	newbook temp;
+	impCSV filename$;
+	win -r %H %(bookname$);
+	wks.name$ = Sheet1;
+	range b = [bookname$]Sheet1!Col(B);
+	range integration_rng = [bookname$]Sheet1!Col(B)[501:601]; // 1021->2980cm-1. 1601->2400cm-1. 1301->2700cm-1. 601->2800cm-1 || 2041->2980cm-1; 2401->2800cm-1
+	subtract_line iy:=col(B) x1:=Col(A)[501] y1:=Col(B)[501] x2:=Col(A)[601] y2:=Col(B)[601] oy:=col(B);
+	subtract_ref iy1:=[bookname$]Sheet1!Col(B) iy2:=[ref]Sheet1!Col(B);
+	// Graficar cada espectro por separado
+	//plotxy iy:=(col(A),col(B)) plot:=200;
+	//win -r %H %(graphname$);
+    string tiempo$ = Left(time$, Len(time$)-1)$;
+    int itiempo = %(tiempo$);
+	TotalA[iFile] = itiempo;
+	integ1 iy:=integration_rng type:=abs;
+	TotalB[iFile] = integ1.area;
+	TotalC[iFile] = b[544];
+	if (tiempo$ == "0")
+	{
+		Int0 = integ1.area;
+		C0 = b[544]; //2305/2172
+	}
+}
+
+window -a Total;
+plotxy iy:=([TOTAL]Sheet1!Col(A),[TOTAL]Sheet1!Col(B));
+win -r %H Int;
+
+window -a Total;
+col(D)=Col(B)/Int0;
+plotxy iy:=([TOTAL]Sheet1!Col(A),[TOTAL]Sheet1!Col(D));
+win -r %H IntRel;
+
+window -a Total;
+col(E)=Col(C)/C0;
+plotxy iy:=([TOTAL]Sheet1!Col(A),[TOTAL]Sheet1!Col(E));
+win -r %H AbsRel;
+
+win -t Plot;	// Create an empty plot
+win -r %H Todos;
+doc -ef W {
+	string bn$ = %H;
+	if (bn$=="Total" || bn$=="ref") {continue;};
+	window -a %H;
+	plotxy iy:=([bn$]Sheet1!Col(A),[bn$]Sheet1!Col(B)) plot:=200 rescale:=1 ogl:=[Todos]1!;
+}
+layer -g; // Group the curves
